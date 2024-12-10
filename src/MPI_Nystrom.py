@@ -5,6 +5,8 @@ import scipy
 from numpy.linalg import eigh
 from mpi4py import MPI
 import math
+import torch
+from hadamard_transform import hadamard_transform
 
 ###################################
 # PARAMETERS (Change these as needed)
@@ -15,6 +17,8 @@ Rate = 10  # Parameter for the exponential matrix generation (e.g., rate paramet
 good_conditionned = False  # Whether to assume B is well-conditioned (for Cholesky vs. eigenvalue decomposition)
 sketch_size = 128  # Sketch size (number of columns in the random sketch matrices)
 rank_k = 128 # Target rank for low-rank approximation
+#method = 'gaussian' #Choose the method
+method = 'fjlt'
 
 #####################
 ## FUNCTIONS
@@ -28,6 +32,59 @@ def generate_gaussian_matrix(seed, shape):
     """Generate a Gaussian random matrix with the specified seed and shape."""
     rng = np.random.default_rng(seed)
     return rng.normal(size=shape)
+
+def applyOmega(A,indices,D,D_tilde,direction):
+    """
+    Apply a Fast Johnson–Lindenstrauss Transform (FJLT) to the input matrix A.
+
+    Depending on the 'direction', this function applies the FJLT either to the rows or
+    to the columns of A. The FJLT projects A onto a lower-dimensional space using a 
+    random combination of sign flipping (via D and D_tilde), a Hadamard transform, 
+    and subsequent subsampling.
+
+    Parameters
+    ----------
+    A : ndarray
+        The input matrix to be transformed.
+    indices : 1D array of integers
+        The indices used to subsample rows or columns after the Hadamard transform.
+    D : 1D array of {+1, -1}
+        The first set of random signs applied to A (either row-wise or column-wise).
+    D_tilde : 1D array of {+1, -1}
+        The second set of random signs applied after subsampling.
+    direction : {'left', 'right'}
+        Determines whether to apply the FJLT to rows ('left') or columns ('right').
+
+    Returns
+    -------
+    ndarray
+        The transformed matrix A after applying the FJLT.
+    """
+
+    l = len(D_tilde)
+    r = A.shape[0]
+    if direction == 'left':  # FJLT applied to the rows of A
+        assert len(D) == r, "The length of D must match the number of rows in A."
+        assert (r & (r - 1) == 0), "The number of rows in A must be a power of 2."
+        # Multiply each row of A by the corresponding element in D
+        OmegaA = A * D[:, np.newaxis]
+        # Apply the Fast Hadamard Transform to the rows
+        OmegaA = hadamard_transform(torch.tensor(OmegaA.T)).numpy().T
+        # Subsample the rows and scale
+        OmegaA = OmegaA[indices, :] * np.sqrt(r / l)
+        # Multiply each row of A by the corresponding element in D_tilde
+        OmegaA = OmegaA * D_tilde[:, np.newaxis]
+        return np.ascontiguousarray(OmegaA)
+    elif direction == 'right':  # FJLT applied to the columns of A
+        # Multiply each column of A by the corresponding element in D
+        AOmega = A * D[np.newaxis, :]
+        # Apply the Fast Hadamard Transform to the columns
+        AOmega = hadamard_transform(torch.tensor(AOmega)).numpy()
+        # Subsample the columns and scale
+        AOmega = AOmega[:, indices] * np.sqrt(r / l)
+        # Multiply each column of A by the corresponding element in D
+        AOmega = AOmega * D_tilde[np.newaxis, :]
+        return np.ascontiguousarray(AOmega)
 
 def getQR(A_local, comm):
     """
@@ -150,7 +207,10 @@ col_comm = cart_comm.Sub([True, False])  # Column communicator
 if rank == 0:
     base_seed_sequence = np.random.SeedSequence(12345)  # Base seed for reproducibility
     # Generate sqrt_p independent subsequences for rows and columns
-    sub_sequences = base_seed_sequence.spawn(sqrt_p)
+    if method == 'gaussian':
+        sub_sequences = base_seed_sequence.spawn(sqrt_p)
+    elif method == 'fjlt':
+       sub_sequences = base_seed_sequence.spawn(sqrt_p+1) # One more seed for the subsampling indices
     seed_values = [int(seq.generate_state(1)[0]) for seq in sub_sequences]
 else:
     seed_values = None
@@ -162,13 +222,31 @@ seed_values = comm.bcast(seed_values, root=0)
 row_seed = seed_values[row]
 col_seed = seed_values[col]
 
-# Each process generates its local random matrices omega_i and omega_j
-omega_i = generate_gaussian_matrix(row_seed, (bloc_size, sketch_size))
-omega_j = generate_gaussian_matrix(col_seed, (bloc_size, sketch_size))
+if method == 'fjlt':
+    #Generate random matrices
+    indices_seed = seed_values[-1] # The last one is common for all processors
+    ## Create random elements with the seeds
+    indices = np.random.default_rng(indices_seed).choice(bloc_size,size=sketch_size,replace=False) #Common for all subOmegas, subsampling indices
+    rng_row = np.random.default_rng(row_seed)
+    rng_col = np.random.default_rng(col_seed)
+    D_row = rng_row.choice([1,-1],size=bloc_size) # D_i
+    D_tilde_row = rng_row.choice([1,-1],size=sketch_size) # D_i_tilde
+    D_col = rng_col.choice([1,-1],size=bloc_size) # D_j
+    D_tilde_col = rng_col.choice([1,-1],size=sketch_size) # D_j_tilde
 
-# Local computations for matrix multiplication
-C_ij = A_ij @ omega_j  # Sketch along the row direction
-B_ij = omega_i.T @ C_ij  # Sketch along the column direction
+    # Local computations for matrix multiplication
+    C_ij = applyOmega(A_ij,indices,D_col,D_tilde_col,direction='right') # Sketch along the row direction
+    B_ij = applyOmega(C_ij,indices,D_row,D_tilde_row,direction='left') # Sketch along the column direction
+
+
+elif method == 'gaussian':
+    # Each process generates its local random matrices omega_i and omega_j
+    omega_i = generate_gaussian_matrix(row_seed, (bloc_size, sketch_size))
+    omega_j = generate_gaussian_matrix(col_seed, (bloc_size, sketch_size))
+
+    # Local computations for matrix multiplication
+    C_ij = A_ij @ omega_j  # Sketch along the row direction
+    B_ij = omega_i.T @ C_ij  # Sketch along the column direction
 
 # Aggregate sketches along rows
 C_i = None
