@@ -5,6 +5,8 @@ import scipy
 from numpy.linalg import eigh
 from mpi4py import MPI
 import math
+import torch
+from hadamard_transform import hadamard_transform
 
 ###################################
 # PARAMETERS (Change these as needed)
@@ -24,10 +26,31 @@ def getError(A, B):
     """Compute the normalized nuclear norm of the difference between A and B."""
     return np.linalg.norm(A - B, ord='nuc') / np.linalg.norm(A, ord='nuc')
 
-def generate_gaussian_matrix(seed, shape):
-    """Generate a Gaussian random matrix with the specified seed and shape."""
-    rng = np.random.default_rng(seed)
-    return rng.normal(size=shape)
+def applyOmega(A,indices,D,D_tilde,direction):
+    l = len(D_tilde)
+    r = A.shape[0]
+    if direction == 'left':  # FJLT applied to the rows of A
+        assert len(D) == r, "The length of D must match the number of rows in A."
+        assert (r & (r - 1) == 0), "The number of rows in A must be a power of 2."
+        # Multiply each row of A by the corresponding element in D
+        OmegaA = A * D[:, np.newaxis]
+        # Apply the Fast Hadamard Transform to the rows
+        OmegaA = hadamard_transform(torch.tensor(OmegaA.T)).numpy().T
+        # Subsample the rows and scale
+        OmegaA = OmegaA[indices, :] * np.sqrt(r / l)
+        # Multiply each row of A by the corresponding element in D_tilde
+        OmegaA = OmegaA * D_tilde[:, np.newaxis]
+        return np.ascontiguousarray(OmegaA)
+    elif direction == 'right':  # FJLT applied to the columns of A
+        # Multiply each column of A by the corresponding element in D
+        AOmega = A * D[np.newaxis, :]
+        # Apply the Fast Hadamard Transform to the columns
+        AOmega = hadamard_transform(torch.tensor(AOmega)).numpy()
+        # Subsample the columns and scale
+        AOmega = AOmega[:, indices] * np.sqrt(r / l)
+        # Multiply each column of A by the corresponding element in D
+        AOmega = AOmega * D_tilde[np.newaxis, :]
+        return np.ascontiguousarray(AOmega)
 
 def getQR(A_local, comm):
     """
@@ -150,7 +173,7 @@ col_comm = cart_comm.Sub([True, False])  # Column communicator
 if rank == 0:
     base_seed_sequence = np.random.SeedSequence(12345)  # Base seed for reproducibility
     # Generate sqrt_p independent subsequences for rows and columns
-    sub_sequences = base_seed_sequence.spawn(sqrt_p)
+    sub_sequences = base_seed_sequence.spawn(sqrt_p+1) #sqrt(p) seeds for rademacher + one unique for the subsampling indices which is common
     seed_values = [int(seq.generate_state(1)[0]) for seq in sub_sequences]
 else:
     seed_values = None
@@ -161,14 +184,20 @@ seed_values = comm.bcast(seed_values, root=0)
 # Each process assigns its row and column seeds based on its coordinates
 row_seed = seed_values[row]
 col_seed = seed_values[col]
+indices_seed = seed_values[-1]
 
-# Each process generates its local random matrices omega_i and omega_j
-omega_i = generate_gaussian_matrix(row_seed, (bloc_size, sketch_size))
-omega_j = generate_gaussian_matrix(col_seed, (bloc_size, sketch_size))
+## Create random elements with the seeds
+indices = np.random.default_rng(indices_seed).choice(bloc_size,size=sketch_size,replace=False) #Common for all subOmegas, subsampling indices
+rng_row = np.random.default_rng(row_seed)
+rng_col = np.random.default_rng(col_seed)
+D_row = rng_row.choice([1,-1],size=bloc_size)
+D_tilde_row = rng_row.choice([1,-1],size=sketch_size)
+D_col = rng_col.choice([1,-1],size=bloc_size)
+D_tilde_col = rng_col.choice([1,-1],size=sketch_size)
 
 # Local computations for matrix multiplication
-C_ij = A_ij @ omega_j  # Sketch along the row direction
-B_ij = omega_i.T @ C_ij  # Sketch along the column direction
+C_ij = applyOmega(A_ij,indices,D_col,D_tilde_col,direction='right') # Sketch along the row direction
+B_ij = applyOmega(C_ij,indices,D_row,D_tilde_row,direction='left') # Sketch along the column direction
 
 # Aggregate sketches along rows
 C_i = None
