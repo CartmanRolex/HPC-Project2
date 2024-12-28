@@ -1,0 +1,44 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment directories
+venv/
+env/
+.venv/
+.python-version
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# VS Code settings
+.vscode/
+
+# macOS specific files
+.DS_Store
+
+# Logs and other artifacts
+*.log
+*.out
+*.err
+*.pid
+
+# Generated files
+*.pyc
+*.pyo
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Test coverage files
+htmlcov/
+.coverage
+.cache/
+.nox/
+pytest_cache/
+
+# Environment variables
+.env
