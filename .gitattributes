@@ -4,3 +4,4 @@ Dataset/mnist_780 filter=lfs diff=lfs merge=lfs -text
 *.scale filter=lfs diff=lfs merge=lfs -text
 Dataset/* filter=lfs diff=lfs merge=lfs -text
 *.csv filter=lfs diff=lfs merge=lfs -text
+Dataset/*.csv filter=lfs diff=lfs merge=lfs -text
