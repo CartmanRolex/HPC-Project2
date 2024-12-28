@@ -42,3 +42,6 @@ pytest_cache/
 
 # Environment variables
 .env
+Dataset/denseData_test1.csv
+Dataset/mnist.scale
+Dataset/mnist_780
