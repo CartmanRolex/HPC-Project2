@@ -21,3 +21,7 @@ def getExpMatrixBloc(i,j,p,n=1e3,R=10,q=0.25): #Get the correspondent bloc
         diag_elements = np.power(10,-q*np.arange(i*bloc_size - R+1,(i+1)*bloc_size - R+1) )
 
     return np.diag(diag_elements)
+
+if __name__ == "__main__": 
+    print(getPolMatrix(n=1e3,R=10,p=1).shape)
+    print("getPolMatrix(n=1e3,R=10,p=1) is\n", getPolMatrix(n=1e3,R=10,p=1))

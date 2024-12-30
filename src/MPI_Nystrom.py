@@ -35,7 +35,7 @@ def generate_gaussian_matrix(seed, shape):
 
 def applyOmega(A,indices,D,D_tilde,direction):
     """
-    Apply a Fast Johnson–Lindenstrauss Transform (FJLT) to the input matrix A.
+    Apply a Fast Johnson-Lindenstrauss Transform (FJLT) to the input matrix A.
 
     Depending on the 'direction', this function applies the FJLT either to the rows or
     to the columns of A. The FJLT projects A onto a lower-dimensional space using a 
