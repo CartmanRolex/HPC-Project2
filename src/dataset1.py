@@ -22,6 +22,12 @@ def getExpMatrixBloc(i,j,p,n=1e3,R=10,q=0.25): #Get the correspondent bloc
 
     return np.diag(diag_elements)
 
-if __name__ == "__main__": 
-    print(getPolMatrix(n=1e3,R=10,p=1).shape)
+def main1():
+    print(getPolMatrix(n=1e3,R=10,p=1).shape, getExpMatrix(n=1e3,R=10,q=0.25).shape)
     print("getPolMatrix(n=1e3,R=10,p=1) is\n", getPolMatrix(n=1e3,R=10,p=1))
+    print("getExpMatrix(n=1e3,R=10,q=0.25) is\n", getExpMatrix(n=1e3,R=10,q=0.25))
+    np.save("./Dataset/A_1_polyDecayMatrix.npy", getPolMatrix(n=1e3,R=10,p=1))
+    np.save("./Dataset/A_2_expDecayMatrix.npy", getExpMatrix(n=1e3,R=10,q=0.25))
+
+if __name__ == "__main__": 
+    main1()
