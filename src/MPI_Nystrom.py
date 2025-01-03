@@ -199,6 +199,9 @@ bloc_size = int(n / sqrt_p)
 # Generate local block of matrix A
 A_ij = getExpMatrixBloc(row, col, size, n=n, R=Rate)  # Local block of matrix A
 
+# TODO: set timer after this point.
+
+
 # Create communicators for rows and columns
 row_comm = cart_comm.Sub([False, True])  # Row communicator
 col_comm = cart_comm.Sub([True, False])  # Column communicator
@@ -296,6 +299,9 @@ if col == 0:  # Work only with processes in the first column
 
     # Reconstruct the approximated matrix block A_nyst_i
     A_nyst_i = (U_hat_i * Sigma[:rank_k]**2) @ U_hats.T
+
+
+# TODO: we can set timer before this point.
 
     # Gather the approximated matrix blocks to the root process
     A_nyst = None
