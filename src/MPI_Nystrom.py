@@ -301,7 +301,7 @@ if col == 0:  # Work only with processes in the first column
     A_nyst_i = (U_hat_i * Sigma[:rank_k]**2) @ U_hats.T
 
 
-# TODO: we can set timer before this point.
+    # TODO: we can set timer before this point.
 
     # Gather the approximated matrix blocks to the root process
     A_nyst = None
